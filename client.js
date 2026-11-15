@@ -134,7 +134,7 @@ window.__ModuleLoader__.load({
 
     function money(n) {
       const v = Number(n || 0);
-      return v === 0 ? '¥0' : `¥${v.toFixed(v < 1 ? 3 : 2)}`;
+      return `¥${v.toFixed(2)}`;
     }
 
     function fmtTime(iso) {
@@ -709,7 +709,7 @@ window.__ModuleLoader__.load({
           ? volcPeriods.map((p) => h('div', { className: 'dbpet-bubble-row', key: `v-${p.label}` },
             h('span', null, `火山 ${periodLabel(p.label)}`),
             h('b', { title: p.resetAt ? `重置：${fmtTime(p.resetAt)}` : '' },
-              `${p.used}/${p.total}  ${p.total ? ((p.used / p.total) * 100).toFixed(p.total > 10000 ? 2 : 1) : 0}%`)))
+              `${p.used}/${p.total}  ${p.total ? ((p.used / p.total) * 100).toFixed(2) : '0.00'}%`)))
           : h('div', { className: 'dbpet-bubble-row' }, h('span', null, '火山额度'), h('b', { className: 'dbpet-dim' }, '未读取')),
         h('div', { className: 'dbpet-bubble-row' }, h('span', null, '豆包额度'),
           doubaoQuota && doubaoQuota.available
