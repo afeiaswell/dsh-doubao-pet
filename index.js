@@ -381,6 +381,7 @@ export function apply(ctx, config = {}) {
         gateway,
         gatewayError,
         cache: arkCache,
+        models: cachedReachableModels() || [],
         defaultModel,
       },
       config: { outDir: outDirPath(), outDirSource: resolveOutDir().source, model: defaultModel, size: defaultSize },
@@ -495,6 +496,37 @@ export function apply(ctx, config = {}) {
     return await coreGenerateArk({ prompt, size, count, model });
   }
 
+  /** 套餐里可用的模型（来自验证缓存）；没缓存返回 null 表示未知 */
+  function cachedReachableModels() {
+    const cache = readArkCache();
+    if (!cache || !Array.isArray(cache.models) || !cache.models.length) return null;
+    return cache.models
+      .filter((m) => m.reachable)
+      .map((m) => ({ id: m.id, price: m.price == null ? null : m.price }));
+  }
+
+  /**
+   * 决定这次用哪个模型：
+   *  - 显式给了 model：必须在可用列表里，否则直接报错并列出可用项
+   *  - 省略 / "auto"：在可用列表里挑，默认模型优先，其余按缓存顺序兜底
+   */
+  function planModelCandidates(requested) {
+    const known = cachedReachableModels();
+    const explicit = requested && String(requested).toLowerCase() !== 'auto' ? String(requested) : '';
+
+    if (explicit) {
+      if (known && known.length && !known.some((m) => m.id === explicit)) {
+        throw new Error(`模型 ${explicit} 不在当前套餐的可用列表里。可用：${known.map((m) => m.id).join('、')}`);
+      }
+      return { mode: 'explicit', candidates: [explicit], known };
+    }
+
+    const ids = known ? known.map((m) => m.id) : [];
+    if (!ids.length) return { mode: 'auto', candidates: [defaultModel], known: null };
+    const ordered = ids.includes(defaultModel) ? [defaultModel, ...ids.filter((id) => id !== defaultModel)] : [...ids];
+    return { mode: 'auto', candidates: ordered, known };
+  }
+
   async function coreGenerateArk({ prompt, size, count, model } = {}) {
     const text = String(prompt || '').trim();
     if (!text) throw new Error('prompt 不能为空');
@@ -513,27 +545,56 @@ export function apply(ctx, config = {}) {
       base = usable.base;
     }
 
-    const chosen = model || defaultModel;
-    const result = await generateImage({
-      apiKey, base, model: chosen, prompt: text,
-      size: size || defaultSize, count: count || 1,
-      outDir: outDirPath(), fileBase: 'doubao_pet',
-    });
-    if (result.files.length) {
-      const unit = unitPrice(chosen, size || defaultSize);
-      const mode = billingModeOf(base);
-      const list = unit == null ? 0 : unit * result.files.length;
-      recordGeneration({ model: chosen, size: size || defaultSize, count: result.files.length, cash: mode === 'plan' ? 0 : list, list });
+    const pick = planModelCandidates(model);
+    const effectiveSize = size || defaultSize;
+    const mode = billingModeOf(base);
+    const tried = [];
+    let lastFail = null;
+
+    for (const candidate of pick.candidates) {
+      tried.push(candidate);
+      const result = await generateImage({
+        apiKey, base, model: candidate, prompt: text,
+        size: effectiveSize, count: count || 1,
+        outDir: outDirPath(), fileBase: 'doubao_pet',
+      });
+      if (result.files.length) {
+        const unit = unitPrice(candidate, effectiveSize);
+        const list = unit == null ? 0 : unit * result.files.length;
+        recordGeneration({ model: candidate, size: effectiveSize, count: result.files.length, cash: mode === 'plan' ? 0 : list, list });
+        return {
+          ok: true,
+          route: 'ark',
+          base,
+          mode,
+          model: candidate,
+          size: result.size,
+          autoSelected: pick.mode === 'auto',
+          tried,
+          files: result.files.map((f) => ({ name: f.name, bytes: f.bytes, path: f.path, url: `${PREFIX}/out/${encodeURIComponent(f.name)}` })),
+          errors: result.errors,
+        };
+      }
+      lastFail = result;
+      // 显式指定的模型不自动替换（用户意图明确）
+      if (pick.mode === 'explicit') break;
+      // 只有「模型不可用」才换下一个；额度/内容审核类错误换模型也没用
+      const msg = JSON.stringify(result.errors || []);
+      if (!/UnsupportedModel|not supported|invalid model|404/i.test(msg)) break;
     }
+
     return {
-      ok: result.files.length > 0,
+      ok: false,
       route: 'ark',
       base,
-      mode: billingModeOf(base),
-      model: result.model,
-      size: result.size,
-      files: result.files.map((f) => ({ name: f.name, bytes: f.bytes, path: f.path, url: `${PREFIX}/out/${encodeURIComponent(f.name)}` })),
-      errors: result.errors,
+      mode,
+      model: tried[tried.length - 1] || defaultModel,
+      size: size || defaultSize,
+      autoSelected: pick.mode === 'auto',
+      tried,
+      availableModels: pick.known ? pick.known.map((m) => m.id) : null,
+      files: [],
+      errors: (lastFail && lastFail.errors) || [{ message: '出图失败' }],
     };
   }
 
@@ -721,7 +782,7 @@ export function apply(ctx, config = {}) {
       route: { type: 'string', description: 'ark (Volcengine API, default) or local (local Doubao desktop work mode).' },
       size: { type: 'string', description: 'Ark only: "2K" (default), "4K", or "WxH" such as "1024x1024".' },
       count: { type: 'number', description: 'How many images, 1-4.' },
-      model: { type: 'string', description: `Ark only: image model id. Known ids: ${KNOWN_IMAGE_MODELS.join(', ')}. Availability depends on the account plan.` },
+      model: { type: 'string', description: 'Ark only. Omit or "auto" to let the plugin pick from the models your plan actually supports (default model first, then fall back on UnsupportedModel). Pass an exact id to force it; ids not in the plan are rejected with the available list. Call doubao_pet_status to see ark.models (reachable ids + unit price). Known ids: ' + KNOWN_IMAGE_MODELS.join(', ') + '.' },
     },
     output: {
       schema: {

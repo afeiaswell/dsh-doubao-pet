@@ -24,7 +24,7 @@
 | `route` | string | `ark`（火山引擎 API）/ `local`（本机豆包工作模式）。**省略时按插件里的「生图偏好」**（`_prefs.json`，默认 ark） |
 | `size` | string | 仅 ark：`2K`（默认）/ `4K` / `1024x1024` 这类精确尺寸 |
 | `count` | number | 1–4，默认 1 |
-| `model` | string | 仅 ark：覆盖默认模型，须是账号套餐里可用的 id |
+| `model` | string | 仅 ark。**省略或 `"auto"`** 就由插件在你套餐真正可用的模型里挑（默认模型优先，遇到 `UnsupportedModel` 自动换下一个）；传确切 id 则强制用该模型，不在套餐里会直接报错并列出可用项 |
 
 两条路线的差别：
 
@@ -72,10 +72,24 @@ curl -X POST http://127.0.0.1:3080/doubao-pet/api/generate \
   -d '{"prompt":"青花瓷松鼠武将，纯色背景","size":"2K","count":1}'
 ```
 
-## 4. 模型与费用
+## 4. 模型选择与费用
+
+**让插件自己挑（推荐）**：不传 `model`，或传 `"auto"`。插件从 `doubao_pet_status` 的
+`ark.models`（= 你套餐里真正可达的模型）里按「默认模型 → 其余」顺序尝试，遇到
+`404 UnsupportedModel` 自动换下一个，返回值里 `autoSelected: true`、`tried` 记录尝试序列。
+
+**指定模型**：传确切 id。不在套餐里会立刻报错，错误信息里带可用列表，例如：
+
+```
+模型 doubao-seedream-5-5-261028 不在当前套餐的可用列表里。
+可用：doubao-seedream-5-0-flash-260915、doubao-seedream-5-0-pro-260628
+```
+
+查询当前可用模型：`doubao_pet_status` → `ark.models`（id + 2K 单价），或在控制台
+「火山引擎生图」页看模型列表（带可达状态与单价）。
 
 - 模型 id 必须带日期后缀，例如 `doubao-seedream-5-0-flash-260915`
-- 可用模型取决于账号套餐：不在套餐里会返回 `404 UnsupportedModel`，额度用尽返回 `429 SetLimitExceeded`
+- 不在套餐里会返回 `404 UnsupportedModel`，额度用尽返回 `429 SetLimitExceeded`
 - 单价（元/张，2K）：5.0 flash `0.12`、5.0 pro `0.30`（4K `0.60`）、5.5 `0.13`、4.5 `0.25`、4.0 `0.20`
 - 套餐网关下现金支出为 0，插件统计里按官方单价折算成"折算值"
 

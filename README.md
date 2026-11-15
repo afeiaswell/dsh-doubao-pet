@@ -85,7 +85,9 @@ Web 界面角落的**豆包桌宠**：悬浮看开销与额度、点击捏一下
 - 工具 `doubao_generate_image` —— `{ prompt, route?, size?, count?, model? }`
   - `route: "ark"`（默认）走火山引擎方舟 API
   - `route: "local"` 走本机豆包客户端工作模式（子进程调 `art/tools/imgforge`，¥0、慢、会在豆包项目里建对话）
-- 工具 `doubao_pet_status` —— 环境 + 今日开销 + **额度用量**（只读）
+  - `model`：**省略或 `"auto"`** 时自动在套餐可用模型里挑（默认优先，`UnsupportedModel` 自动换下一个，
+    返回 `autoSelected`/`tried`）；传确切 id 则强制使用，不在套餐里直接报错并列出可用项
+- 工具 `doubao_pet_status` —— 环境 + 今日开销 + 额度用量 + `ark.models`（可用模型 id 与单价，只读）
 - HTTP：`POST /doubao-pet/api/generate`、`GET /doubao-pet/api/status`、`GET /doubao-pet/api/usage`
 - 文档：[`docs/IMAGE_GEN.md`](docs/IMAGE_GEN.md)（DSH 需要图时先读它）
 
