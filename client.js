@@ -549,22 +549,26 @@ window.__ModuleLoader__.load({
             h('label', null, '本地额度与出图开销'),
             h('div', { className: 'dbpet-note' },
               doubaoQuota && doubaoQuota.available
-                ? `额度：${doubaoQuota.used}/${doubaoQuota.total}（${((doubaoQuota.used / doubaoQuota.total) * 100).toFixed(2)}%）${doubaoQuota.source === 'manual' ? ' · 手动填写' : ' · 自动读取'}`
-                : `额度：未读取 — ${(doubaoQuota && doubaoQuota.reason) || '可手动填写'}`),
+                ? `额度：${doubaoQuota.used.toLocaleString()}/${doubaoQuota.total.toLocaleString()}（${doubaoQuota.percent.toFixed(2)}%）`
+                  + (doubaoQuota.plan ? ` · ${doubaoQuota.plan}` : '')
+                  + (doubaoQuota.price ? ` · ${doubaoQuota.price}/月` : '')
+                  + (doubaoQuota.renewAt ? ` · 续费 ${fmtTime(doubaoQuota.renewAt)}` : '')
+                  + (doubaoQuota.source === 'manual' ? ' · 手动覆盖' : '')
+                : `额度：未读取 — ${(doubaoQuota && doubaoQuota.reason) || '客户端未开启调试端口'}`),
             h('div', { className: 'dbpet-inline' },
               h('input', {
                 className: 'dbpet-input', style: { width: '84px' }, inputMode: 'numeric', placeholder: '已用',
-                value: dqUsed, onChange: (e) => setDqUsed(e.target.value), 'aria-label': '豆包额度已用',
+                value: dqUsed, onChange: (e) => setDqUsed(e.target.value), 'aria-label': '豆包额度已用（覆盖）',
               }),
               h('span', { className: 'dbpet-sub' }, '/'),
               h('input', {
                 className: 'dbpet-input', style: { width: '96px' }, inputMode: 'numeric', placeholder: '上限',
-                value: dqTotal, onChange: (e) => setDqTotal(e.target.value), 'aria-label': '豆包额度上限',
+                value: dqTotal, onChange: (e) => setDqTotal(e.target.value), 'aria-label': '豆包额度上限（覆盖）',
               }),
-              h('button', { className: 'dbpet-btn', onClick: saveManualQuota }, '记住'),
+              h('button', { className: 'dbpet-btn', onClick: saveManualQuota }, '覆盖'),
               h('button', { className: 'dbpet-btn', onClick: clearManualQuota }, '清除'),
               h('button', { className: 'dbpet-btn', onClick: readDoubaoQuota, disabled: busy === 'quota' },
-                busy === 'quota' ? '读取中…' : '自动读取')),
+                busy === 'quota' ? '读取中…' : '重新读取')),
             h('div', { className: 'dbpet-note' },
               `今日 ${today.local.count} 张 · ${money(today.local.cash)}（订阅额度）`),
             h('div', { className: 'dbpet-note' },

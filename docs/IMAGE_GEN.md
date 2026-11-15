@@ -85,8 +85,10 @@ curl -X POST http://127.0.0.1:3080/doubao-pet/api/generate \
 
 - **火山引擎**：`usage.volcengine.items[].periods[]`，每段有 `label`（5h / weekly / monthly）、`used`、`total`、`percent`、`resetAt`。
   数据来自 `arkcli usage plan`（需 `arkcli auth login`），和控制台「用量」那三行一致。
-- **豆包本地**：`usage.doubao`，形如 `{ available: true, used: 347, total: 24000 }`。
-  客户端没有对外 API，只有它带调试端口、且页面能看到额度数字时才读得到；读不到会给 `reason`。
+- **豆包本地**：`usage.doubao`，形如
+  `{ available: true, used: 347, total: 24000, percent: 1.45, plan: "加强套餐", price: "CN¥200.00", renewAt }`。
+  做法是在客户端页面上下文里调它自己的额度接口（自带登录态），静默、不弹窗、约 235ms；
+  客户端没开调试端口时 `available: false` 并给出 `reason`。
 - **今日出图与花费**：`stats.today.local` / `stats.today.ark`（`count`、`cash`、`list`）。
 
 ## 6. 豆包本地出图
