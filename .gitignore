@@ -4,7 +4,11 @@ pnpm-lock.yaml
 .DS_Store
 Thumbs.db
 
-# 运行期缓存（生成在 outDir，不应进仓库）
+# 本机凭据，绝不入库
+.gh_token
+.env
+.env.*
+
 _ark_cache.json
 _usage_cache.json
 _prefs.json
