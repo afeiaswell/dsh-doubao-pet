@@ -174,24 +174,6 @@ window.__ModuleLoader__.load({
       const [modal, setModal] = useState(false);
       const [quota, setQuota] = useState(null);
       const [quotaBusy, setQuotaBusy] = useState(false);
-      // 豆包额度：客户端页面读不到时，允许手动填一次（记住）
-      const [dqUsed, setDqUsed] = useState(() => (p0.dqUsed != null ? String(p0.dqUsed) : ''));
-      const [dqTotal, setDqTotal] = useState(() => (p0.dqTotal != null ? String(p0.dqTotal) : ''));
-      const saveManualQuota = () => {
-        const used = Number(String(dqUsed).replace(/[^\d.]/g, ''));
-        const total = Number(String(dqTotal).replace(/[^\d.]/g, ''));
-        if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) {
-          setNote({ kind: 'err', text: '已用 / 上限要填数字，上限需大于 0' });
-          return;
-        }
-        savePrefs({ dqUsed: used, dqTotal: total, dqAt: new Date().toISOString() });
-        setNote({ kind: 'ok', text: `已记住豆包额度：${used}/${total}` });
-      };
-      const clearManualQuota = () => {
-        setDqUsed(''); setDqTotal('');
-        savePrefs({ dqUsed: null, dqTotal: null, dqAt: null });
-        setNote({ kind: 'ok', text: '已清除手动额度' });
-      };
       const [resizing, setResizing] = useState(false);
 
       const timers = useRef([]);
@@ -498,7 +480,7 @@ window.__ModuleLoader__.load({
           const u = await loadUsage(true);
           const d = u && u.doubao;
           if (d && d.available) setNote({ kind: 'ok', text: `豆包额度：${d.used}/${d.total}（自动读取成功）` });
-          else setNote({ kind: 'warn', text: (d && d.reason) || '自动读取失败，可用「以调试端口重启」或手动覆盖' });
+          else setNote({ kind: 'warn', text: (d && d.reason) || '自动读取失败，可用「以调试端口重启豆包」后重试' });
         } catch (err) {
           setNote({ kind: 'err', text: String(err && err.message || err) });
         } finally { setBusy(''); }
@@ -543,14 +525,7 @@ window.__ModuleLoader__.load({
       const volcPeriods = usage && usage.volcengine && usage.volcengine.available && Array.isArray(usage.volcengine.items)
         ? usage.volcengine.items.flatMap((it) => (it.periods || []).map((p) => ({ ...p, tier: it.tier })))
         : [];
-      const doubaoQuotaAuto = usage && usage.doubao ? usage.doubao : null;
-      // 手动填写的优先（客户端页面在部分版本里读不到）
-      const manualUsed = Number(String(dqUsed).replace(/[^\d.]/g, ''));
-      const manualTotal = Number(String(dqTotal).replace(/[^\d.]/g, ''));
-      const hasManualQuota = dqUsed !== '' && dqTotal !== '' && Number.isFinite(manualUsed) && manualTotal > 0;
-      const doubaoQuota = hasManualQuota
-        ? { available: true, used: manualUsed, total: manualTotal, percent: Math.round((manualUsed / manualTotal) * 10000) / 100, source: 'manual' }
-        : doubaoQuotaAuto;
+      const doubaoQuota = usage && usage.doubao ? usage.doubao : null;
       const periodLabel = (label) => ({ '5h': '5 小时', weekly: '本周', monthly: '本月' }[label] || label);
       const localInstalled = Boolean(status && status.doubao && status.doubao.installed);
       const localRunning = Boolean(status && status.doubao && status.doubao.running);
@@ -579,20 +554,8 @@ window.__ModuleLoader__.load({
                   + (doubaoQuota.plan ? ` · ${doubaoQuota.plan}` : '')
                   + (doubaoQuota.price ? ` · ${doubaoQuota.price}/月` : '')
                   + (doubaoQuota.renewAt ? ` · 续费 ${fmtTime(doubaoQuota.renewAt)}` : '')
-                  + (doubaoQuota.source === 'manual' ? ' · 手动覆盖' : '')
                 : `额度：未读取 — ${(doubaoQuota && doubaoQuota.reason) || '客户端未开启调试端口'}`),
             h('div', { className: 'dbpet-inline' },
-              h('input', {
-                className: 'dbpet-input', style: { width: '84px' }, inputMode: 'numeric', placeholder: '已用',
-                value: dqUsed, onChange: (e) => setDqUsed(e.target.value), 'aria-label': '豆包额度已用（覆盖）',
-              }),
-              h('span', { className: 'dbpet-sub' }, '/'),
-              h('input', {
-                className: 'dbpet-input', style: { width: '96px' }, inputMode: 'numeric', placeholder: '上限',
-                value: dqTotal, onChange: (e) => setDqTotal(e.target.value), 'aria-label': '豆包额度上限（覆盖）',
-              }),
-              h('button', { className: 'dbpet-btn', onClick: saveManualQuota }, '覆盖'),
-              h('button', { className: 'dbpet-btn', onClick: clearManualQuota }, '清除'),
               h('button', { className: 'dbpet-btn', onClick: readDoubaoQuota, disabled: busy === 'quota' },
                 busy === 'quota' ? '读取中…' : '重新读取')),
             h('div', { className: 'dbpet-note' },
