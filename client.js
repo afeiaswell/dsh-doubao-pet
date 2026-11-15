@@ -464,15 +464,41 @@ window.__ModuleLoader__.load({
         finally { setBusy(''); }
       };
 
-      /** 静默读豆包额度：只扫客户端已加载页面的 DOM / 本地存储，不弹窗、不闪界面 */
+      /** 关掉豆包再带调试端口重启（两步确认，避免误点） */
+      const [armRestart, setArmRestart] = useState(false);
+      const restartDoubao = async () => {
+        if (!armRestart) {
+          setArmRestart(true);
+          setNote({ kind: 'warn', text: '再点一次确认：会关闭当前豆包窗口，并用调试端口重新启动（额度自动读取依赖这个端口）' });
+          return;
+        }
+        setArmRestart(false);
+        setBusy('restart');
+        setNote({ text: '正在关闭豆包…' });
+        try {
+          const r = await postJson('/api/doubao/restart', { confirm: true });
+          if (r && r.ok) {
+            setNote({ kind: 'ok', text: `已带调试端口重启，端口 ${r.waitedMs}ms 就绪` });
+            await loadStatus();
+            await loadUsage(true);
+          } else {
+            setNote({ kind: 'err', text: (r && r.error) || '重启失败' });
+            await loadStatus();
+          }
+        } catch (err) {
+          setNote({ kind: 'err', text: String(err && err.message || err) });
+        } finally { setBusy(''); }
+      };
+
+      /** 重新静默读一次额度（接口读取，不弹窗） */
       const readDoubaoQuota = async () => {
         setBusy('quota');
         setNote(null);
         try {
           const u = await loadUsage(true);
           const d = u && u.doubao;
-          if (d && d.available) setNote({ kind: 'ok', text: `豆包额度：${d.used}/${d.total}（静默读取成功）` });
-          else setNote({ kind: 'warn', text: (d && d.reason) || '静默读取失败，可手动填写后点「记住」' });
+          if (d && d.available) setNote({ kind: 'ok', text: `豆包额度：${d.used}/${d.total}（自动读取成功）` });
+          else setNote({ kind: 'warn', text: (d && d.reason) || '自动读取失败，可用「以调试端口重启」或手动覆盖' });
         } catch (err) {
           setNote({ kind: 'err', text: String(err && err.message || err) });
         } finally { setBusy(''); }
@@ -570,12 +596,18 @@ window.__ModuleLoader__.load({
               h('button', { className: 'dbpet-btn', onClick: readDoubaoQuota, disabled: busy === 'quota' },
                 busy === 'quota' ? '读取中…' : '重新读取')),
             h('div', { className: 'dbpet-note' },
+              '额度是直接调客户端自己的接口读的（不弹窗）。这个接口只在客户端带调试端口启动时可用；'
+              + '若显示「未读取」，用下面的按钮带端口重启一次即可。'),
+            h('div', { className: 'dbpet-inline' },
+              h('button', {
+                className: 'dbpet-btn' + (armRestart ? ' danger' : ''),
+                onClick: restartDoubao,
+                disabled: busy === 'restart',
+              }, busy === 'restart' ? '重启中…' : (armRestart ? '确认重启（会关闭豆包）' : '以调试端口重启豆包'))),
+            h('div', { className: 'dbpet-note' },
               `今日 ${today.local.count} 张 · ${money(today.local.cash)}（订阅额度）`),
             h('div', { className: 'dbpet-note' },
-              `累计 ${stats ? stats.totals.local.count : 0} 张 · ${money(stats ? stats.totals.local.cash : 0)}`),
-            h('div', { className: 'dbpet-inline' },
-              h('button', { className: 'dbpet-btn', onClick: readDoubaoQuota, disabled: busy === 'quota' },
-                busy === 'quota' ? '读取中…' : '读取豆包额度')))
+              `累计 ${stats ? stats.totals.local.count : 0} 张 · ${money(stats ? stats.totals.local.cash : 0)}`))
           : h('div', { className: 'dbpet-note' }, '装好豆包客户端后会自动读取本地出图统计（来自工作区 art/cost/ledger.jsonl）。'),
         h('div', { className: 'dbpet-inline', style: { justifyContent: 'flex-end' } },
           h('button', { className: 'dbpet-btn', onClick: loadStatus }, '刷新')));

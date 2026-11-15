@@ -9,7 +9,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,7 @@ import {
   detectGateway, keyExists, listModels, probeModels, generateImage,
   billingModeOf, DEFAULT_MODEL, KNOWN_IMAGE_MODELS, PLAN_BASE, PAYG_BASE,
 } from './lib/ark.js';
-import { probeArkcli, probeDoubao, deployArkcli, probePlan, probePlanUsage, probeDoubaoQuota } from './lib/env.js';
+import { probeArkcli, probeDoubao, deployArkcli, probePlan, probePlanUsage, probeDoubaoQuota, relaunchDoubaoWithDebug } from './lib/env.js';
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CREDENTIAL_KEY = 'DOUBAO_ARK_API_KEY';
 const PREFIX = '/doubao-pet';
@@ -646,6 +646,18 @@ export function apply(ctx, config = {}) {
               return sendJson(res, 200, { ok: true, saved: true, keyHint: `…${apiKey.slice(-6)}`, ...sync, plan });
             } catch (err) {
               return sendJson(res, 200, { ok: true, saved: true, syncError: String(err && err.message || err) });
+            }
+          }
+
+          if (sub === '/api/doubao/restart') {
+            if (body.confirm !== true) return sendJson(res, 400, { error: '会关闭当前豆包并重启，需要显式确认（confirm: true）' });
+            try {
+              const result = await relaunchDoubaoWithDebug(9222);
+              envCache.at = 0;                                   // 让下次 status 重新探测
+              try { unlinkSync(usageCacheFile()); } catch { /* 没有缓存也无所谓 */ }
+              return sendJson(res, 200, result);
+            } catch (err) {
+              return sendJson(res, 500, { ok: false, error: String(err && err.message || err) });
             }
           }
 
