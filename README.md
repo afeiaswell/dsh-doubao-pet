@@ -1,5 +1,9 @@
 # dsh-doubao-pet
 
+<p align="center">
+  <img src="docs/pet.png" alt="豆包桌宠" width="150">
+</p>
+
 Web 界面角落的**豆包桌宠**：悬浮看开销与额度、点击捏一下、可拖动可缩放可贴边。
 生图有两条路线——**本机豆包工作模式**和**火山引擎方舟 API**——都通过 Agent 工具 + HTTP 接口暴露给 DSH。
 
