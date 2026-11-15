@@ -652,6 +652,19 @@ window.__ModuleLoader__.load({
             ? '当前默认：豆包本地工作模式（¥0，1–3 分钟，会在豆包项目里建对话）'
             : '当前默认：火山引擎 API（3–15 秒，套餐内 ¥0 / 按量按张计费）'),
         h('div', { className: 'dbpet-field' },
+          h('label', null, 'Ark 模型偏好（不指定 model 时按这个挑）'),
+          h('div', { className: 'dbpet-inline' },
+            [['fast', '速度 / 经济优先'], ['quality', '质量优先']].map(([value, label]) => h('button', {
+              key: value,
+              className: 'dbpet-btn' + ((prefs && prefs.modelPreference === value) ? ' primary' : ''),
+              disabled: prefsBusy,
+              onClick: () => savePrefs({ modelPreference: value }),
+            }, label)))),
+        h('div', { className: 'dbpet-note' },
+          (prefs && prefs.modelPreference === 'quality')
+            ? '质量优先：先用套餐里最贵的模型（现在通常是 5.0 pro ¥0.30/张），失败自动回落到便宜的'
+            : '速度 / 经济优先：先用套餐里最便宜的模型（现在通常是 5.0 flash ¥0.12/张），失败自动回落到其他'),
+        h('div', { className: 'dbpet-field' },
           h('label', null, '形象'),
           h('div', { className: 'dbpet-chars' },
             (characters.length ? characters : [{ id: 'doubao', name: '豆包', aspect: 1, assets: { idle: assets.idle } }, { id: 'sdniang', name: 'sd娘', aspect: 1, assets: { idle: assets.idle } }])

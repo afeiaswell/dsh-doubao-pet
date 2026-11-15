@@ -121,8 +121,23 @@ API Key 只存在于 credentials（记录键 `DOUBAO_ARK_API_KEY`），不写配
 
 ## 生图偏好
 
-「外观设置」页可选 **生图偏好**：火山引擎 API / 豆包本地工作模式，写入 `<outDir>/_prefs.json`。
-调用 `doubao_generate_image` 时**没显式给 `route`** 就按这个偏好走；给了 `route` 以显式为准。
+「外观设置」页有两项偏好，都持久化在 `<outDir>/_prefs.json`：
+
+| 偏好 | 取值 | 作用 |
+|---|---|---|
+| 生图通道 | 火山引擎 API / 豆包本地工作模式 | 调用时**没给 `route`** 就按它走 |
+| Ark 模型偏好 | 速度 / 经济优先、质量优先 | 调用时**没给 `model`** 就按它排序挑模型 |
+
+模型偏好只是**排序**：先按偏好选最合适的一个，遇到 `UnsupportedModel` 仍会自动回落到下一个，
+不会因为偏好导致失败。单次调用可以用 `prefer: "fast" | "quality"` 覆盖。
+
+实测（套餐内两个模型 flash ¥0.12 / pro ¥0.30）：
+
+| 设置 | 不指定 model 的结果 |
+|---|---|
+| 速度 / 经济优先 | `doubao-seedream-5-0-flash-260915` |
+| 质量优先 | `doubao-seedream-5-0-pro-260628` |
+| `prefer: "fast"`（quality 前提下按次覆盖） | `doubao-seedream-5-0-flash-260915` |
 
 
 | 缓存 | 位置 | 内容 |

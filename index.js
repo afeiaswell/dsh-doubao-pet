@@ -250,12 +250,22 @@ export function apply(ctx, config = {}) {
   function readPrefs() {
     try {
       const p = JSON.parse(readFileSync(prefsFile(), 'utf8'));
-      return { defaultRoute: p && p.defaultRoute === 'local' ? 'local' : 'ark' };
-    } catch { return { defaultRoute: 'ark' }; }
+      return {
+        defaultRoute: p && p.defaultRoute === 'local' ? 'local' : 'ark',
+        modelPreference: p && p.modelPreference === 'quality' ? 'quality' : 'fast',
+      };
+    } catch {
+      return { defaultRoute: 'ark', modelPreference: 'fast' };
+    }
   }
 
   function writePrefs(next) {
-    const value = { defaultRoute: next && next.defaultRoute === 'local' ? 'local' : 'ark' };
+    const cur = readPrefs();
+    const merged = { ...cur, ...(next || {}) };
+    const value = {
+      defaultRoute: merged.defaultRoute === 'local' ? 'local' : 'ark',
+      modelPreference: merged.modelPreference === 'quality' ? 'quality' : 'fast',
+    };
     mkdirSync(path.dirname(prefsFile()), { recursive: true });
     writeFileSync(prefsFile(), JSON.stringify(value, null, 2), 'utf8');
     return value;
@@ -488,12 +498,12 @@ export function apply(ctx, config = {}) {
   }
 
   /** 一次出图：显式 route 优先，否则按「生图偏好」；ark = 火山 API，local = 本机豆包工作模式 */
-  async function coreGenerate({ prompt, size, count, model, route } = {}) {
+  async function coreGenerate({ prompt, size, count, model, route, prefer } = {}) {
     const explicit = String(route || '').trim().toLowerCase();
     const pref = readPrefs().defaultRoute || 'ark';
     const useLocal = explicit === 'local' || (!explicit && pref === 'local');
     if (useLocal) return await coreGenerateLocal({ prompt, count });
-    return await coreGenerateArk({ prompt, size, count, model });
+    return await coreGenerateArk({ prompt, size, count, model, prefer });
   }
 
   /** 套餐里可用的模型（来自验证缓存）；没缓存返回 null 表示未知 */
@@ -508,9 +518,12 @@ export function apply(ctx, config = {}) {
   /**
    * 决定这次用哪个模型：
    *  - 显式给了 model：必须在可用列表里，否则直接报错并列出可用项
-   *  - 省略 / "auto"：在可用列表里挑，默认模型优先，其余按缓存顺序兜底
+   *  - 省略 / "auto"：在可用列表里挑，按「模型偏好」排序
+   *      fast（默认）：便宜的优先（flash 先）——快、省
+   *      quality：贵的优先（pro 先）——画质优先，失败自动回落
+   *    prefer 参数可按次覆盖偏好。
    */
-  function planModelCandidates(requested) {
+  function planModelCandidates(requested, prefer) {
     const known = cachedReachableModels();
     const explicit = requested && String(requested).toLowerCase() !== 'auto' ? String(requested) : '';
 
@@ -518,16 +531,29 @@ export function apply(ctx, config = {}) {
       if (known && known.length && !known.some((m) => m.id === explicit)) {
         throw new Error(`模型 ${explicit} 不在当前套餐的可用列表里。可用：${known.map((m) => m.id).join('、')}`);
       }
-      return { mode: 'explicit', candidates: [explicit], known };
+      return { mode: 'explicit', candidates: [explicit], known, preference: null };
     }
 
-    const ids = known ? known.map((m) => m.id) : [];
-    if (!ids.length) return { mode: 'auto', candidates: [defaultModel], known: null };
-    const ordered = ids.includes(defaultModel) ? [defaultModel, ...ids.filter((id) => id !== defaultModel)] : [...ids];
-    return { mode: 'auto', candidates: ordered, known };
+    if (!known || !known.length) {
+      return { mode: 'auto', candidates: [defaultModel], known: null, preference: 'default' };
+    }
+
+    const preference = (prefer === 'quality' || prefer === 'fast')
+      ? prefer
+      : (readPrefs().modelPreference || 'fast');
+
+    const priceOf = (m) => (m.price == null ? -1 : Number(m.price));
+    const sorted = [...known].sort((a, b) => {
+      const pa = priceOf(a); const pb = priceOf(b);
+      if (pa !== pb) return preference === 'quality' ? pb - pa : pa - pb;
+      return 0;
+    });
+    const ids = sorted.map((m) => m.id);
+    // 默认模型在列表里、且排序没把它放在首位时，仍保持排序（不强行插队），但同价时优先默认
+    return { mode: 'auto', candidates: ids, known, preference };
   }
 
-  async function coreGenerateArk({ prompt, size, count, model } = {}) {
+  async function coreGenerateArk({ prompt, size, count, model, prefer } = {}) {
     const text = String(prompt || '').trim();
     if (!text) throw new Error('prompt 不能为空');
     const apiKey = await readApiKey();
@@ -545,7 +571,7 @@ export function apply(ctx, config = {}) {
       base = usable.base;
     }
 
-    const pick = planModelCandidates(model);
+    const pick = planModelCandidates(model, prefer);
     const effectiveSize = size || defaultSize;
     const mode = billingModeOf(base);
     const tried = [];
@@ -570,6 +596,7 @@ export function apply(ctx, config = {}) {
           model: candidate,
           size: result.size,
           autoSelected: pick.mode === 'auto',
+          preference: pick.preference || null,
           tried,
           files: result.files.map((f) => ({ name: f.name, bytes: f.bytes, path: f.path, url: `${PREFIX}/out/${encodeURIComponent(f.name)}` })),
           errors: result.errors,
@@ -591,6 +618,7 @@ export function apply(ctx, config = {}) {
       model: tried[tried.length - 1] || defaultModel,
       size: size || defaultSize,
       autoSelected: pick.mode === 'auto',
+      preference: pick.preference || null,
       tried,
       availableModels: pick.known ? pick.known.map((m) => m.id) : null,
       files: [],
@@ -724,7 +752,10 @@ export function apply(ctx, config = {}) {
 
           if (sub === '/api/prefs') {
             try {
-              const saved = writePrefs({ defaultRoute: body.defaultRoute });
+              const patch = {};
+              if (body.defaultRoute !== undefined) patch.defaultRoute = body.defaultRoute;
+              if (body.modelPreference !== undefined) patch.modelPreference = body.modelPreference;
+              const saved = writePrefs(patch);
               return sendJson(res, 200, { ok: true, ...saved });
             } catch (err) {
               return sendJson(res, 500, { ok: false, error: String(err && err.message || err) });
@@ -782,7 +813,8 @@ export function apply(ctx, config = {}) {
       route: { type: 'string', description: 'ark (Volcengine API, default) or local (local Doubao desktop work mode).' },
       size: { type: 'string', description: 'Ark only: "2K" (default), "4K", or "WxH" such as "1024x1024".' },
       count: { type: 'number', description: 'How many images, 1-4.' },
-      model: { type: 'string', description: 'Ark only. Omit or "auto" to let the plugin pick from the models your plan actually supports (default model first, then fall back on UnsupportedModel). Pass an exact id to force it; ids not in the plan are rejected with the available list. Call doubao_pet_status to see ark.models (reachable ids + unit price). Known ids: ' + KNOWN_IMAGE_MODELS.join(', ') + '.' },
+      model: { type: 'string', description: 'Ark only. Omit or "auto" to let the plugin pick from the models your plan actually supports, ordered by the model preference (fast/speed-first vs quality-first); on UnsupportedModel it falls back to the next model. Pass an exact id to force it; ids not in the plan are rejected with the available list. Call doubao_pet_status to see ark.models (reachable ids + unit price). Known ids: ' + KNOWN_IMAGE_MODELS.join(', ') + '.' },
+      prefer: { type: 'string', description: 'Ark only, overrides the saved model preference for this call: "fast" (cheaper/speed first, default) or "quality" (better/more expensive first). Ignored when model is an explicit id.' },
     },
     output: {
       schema: {

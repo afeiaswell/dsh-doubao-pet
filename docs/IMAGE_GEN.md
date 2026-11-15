@@ -24,7 +24,8 @@
 | `route` | string | `ark`（火山引擎 API）/ `local`（本机豆包工作模式）。**省略时按插件里的「生图偏好」**（`_prefs.json`，默认 ark） |
 | `size` | string | 仅 ark：`2K`（默认）/ `4K` / `1024x1024` 这类精确尺寸 |
 | `count` | number | 1–4，默认 1 |
-| `model` | string | 仅 ark。**省略或 `"auto"`** 就由插件在你套餐真正可用的模型里挑（默认模型优先，遇到 `UnsupportedModel` 自动换下一个）；传确切 id 则强制用该模型，不在套餐里会直接报错并列出可用项 |
+| `model` | string | 仅 ark。**省略或 `"auto"`** 就由插件在你套餐真正可用的模型里挑，按「模型偏好」排序（见下）；传确切 id 则强制使用，不在套餐里会直接报错并列出可用项 |
+| `prefer` | string | 仅 ark。按次覆盖模型偏好：`"fast"`（便宜 / 快）或 `"quality"`（贵 / 好）。`model` 给了确切 id 时忽略 |
 
 两条路线的差别：
 
@@ -75,8 +76,10 @@ curl -X POST http://127.0.0.1:3080/doubao-pet/api/generate \
 ## 4. 模型选择与费用
 
 **让插件自己挑（推荐）**：不传 `model`，或传 `"auto"`。插件从 `doubao_pet_status` 的
-`ark.models`（= 你套餐里真正可达的模型）里按「默认模型 → 其余」顺序尝试，遇到
-`404 UnsupportedModel` 自动换下一个，返回值里 `autoSelected: true`、`tried` 记录尝试序列。
+`ark.models`（= 你套餐里真正可达的模型）里按「模型偏好」排序尝试（`fast` = 便宜的在前，
+`quality` = 贵的在前），遇到 `404 UnsupportedModel` 自动换下一个，返回值里
+`autoSelected: true`、`preference`、`tried` 记录尝试序列。偏好可在控制台「外观设置」里改，
+也能按次用 `prefer` 覆盖。
 
 **指定模型**：传确切 id。不在套餐里会立刻报错，错误信息里带可用列表，例如：
 
