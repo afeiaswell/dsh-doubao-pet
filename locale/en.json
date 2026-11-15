@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "title": "Doubao pet",
+    "description": "A Doubao / SD-chan mascot in the corner of the web shell: drag, resize, snap to edges, and hover for today's spend plus each channel's quota usage. Generates images through both the local Doubao work mode and the Volcengine Ark API."
+  },
+  "pet": {
+    "settings": "Open the Doubao console",
+    "close": "Close"
+  },
+  "console": {
+    "title": "Doubao console",
+    "tabs": { "local": "Local Doubao", "ark": "Volcengine", "appearance": "Appearance" }
+  }
+}

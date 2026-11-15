@@ -1,0 +1,12 @@
+node_modules/
+pnpm-lock.yaml
+*.log
+.DS_Store
+Thumbs.db
+
+# 运行期缓存（生成在 outDir，不应进仓库）
+_ark_cache.json
+_usage_cache.json
+_prefs.json
+_stats.json
+.ingested.json

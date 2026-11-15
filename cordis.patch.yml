@@ -1,0 +1,8 @@
+# dsh-doubao-pet — 挂载声明
+#
+# 把「豆包桌宠 + 生图控制台」插入当前 profile 的配置树。
+#   dsh plugin --profile web add link:<本目录绝对路径>
+#
+- insert:
+    - id: dsh-doubao-pet
+      name: dsh-doubao-pet
