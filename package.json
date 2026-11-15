@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Doubao desktop pet for the DSH web shell: a draggable, resizable mascot with a quota bubble, plus image generation through both the local Doubao work mode and the Volcengine Ark API.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/afeiaswell/dsh-doubao-pet.git"
+  },
+  "homepage": "https://github.com/afeiaswell/dsh-doubao-pet#readme",
+  "bugs": {
+    "url": "https://github.com/afeiaswell/dsh-doubao-pet/issues"
+  },
+  "author": "afeiaswell",
   "keywords": [
     "dsh",
     "dsh-plugin",
