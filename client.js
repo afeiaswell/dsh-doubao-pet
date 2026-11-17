@@ -43,6 +43,9 @@ window.__ModuleLoader__.load({
 .dbpet-pet { position: relative; width: 100%; height: 100%; cursor: grab; user-select: none; touch-action: none; }
 .dbpet-pet:active { cursor: grabbing; }
 .dbpet-pet img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+/* 方位判断：默认朝右歪头；跑到屏幕右半边就水平镜像，让脸朝屏幕内侧 */
+.dbpet-art { width: 100%; height: 100%; transition: transform .28s cubic-bezier(.4,0,.2,1); }
+.dbpet-art.is-flipped { transform: scaleX(-1); }
 .dbpet-pet.is-squish img { animation: dbpet-squish .62s cubic-bezier(.34,1.56,.64,1); transform-origin: 50% 88%; }
 @keyframes dbpet-squish {
   0%   { transform: scale(1,1); }
@@ -155,7 +158,18 @@ window.__ModuleLoader__.load({
       const [charId, setCharId] = useState(() => (p0.charId === 'sdniang' ? 'sdniang' : 'doubao'));
       const [size, setSize] = useState(() => clamp(Number(p0.size) || DEFAULT_SIZE, MIN_SIZE, MAX_SIZE));
       const [snap, setSnap] = useState(() => p0.snap !== false);
-      const [pos, setPos] = useState(null);
+      // 初始位置：**同步**从 localStorage 还原，避免先渲染到屏幕外再跳回来。
+      // 保存的是盒子左上角坐标，与角色宽高比无关，所以这里可以直接用。
+      const [pos, setPos] = useState(() => {
+        const s = clamp(Number(p0.size) || DEFAULT_SIZE, MIN_SIZE, MAX_SIZE);
+        const { w, h } = viewport();
+        const width = Math.round(s * 0.89);          // 角色加载前的兜底宽高比
+        const hasSaved = Number.isFinite(Number(p0.x)) && Number.isFinite(Number(p0.y));
+        // 默认落在**左侧**：角色默认朝右歪头，站左边正好面向内容区
+        const x = hasSaved ? Number(p0.x) : 14;
+        const y = hasSaved ? Number(p0.y) : h - s - 88;
+        return { x: clamp(x, 0, Math.max(0, w - width)), y: clamp(y, 0, Math.max(0, h - s)) };
+      });
       const [phase, setPhase] = useState('idle');
       const [squish, setSquish] = useState(false);
       const [hovering, setHovering] = useState(false);
@@ -218,15 +232,10 @@ window.__ModuleLoader__.load({
         return p;
       }, [clampPos]);
 
-      // 初始位置：优先用记忆；否则右下角
+      // 角色素材加载完（宽高比变化）或窗口变化时，把盒子夹回可视区，避免宽角色溢出屏幕
       useEffect(() => {
-        if (pos) return;
-        const s = clamp(Number(p0.size) || DEFAULT_SIZE, MIN_SIZE, MAX_SIZE);
-        const next = (typeof p0.x === 'number' && typeof p0.y === 'number')
-          ? clampPos(p0.x, p0.y, s)
-          : (() => { const { w, h } = viewport(); return clampPos(w - Math.round(s * aspect) - 14, h - s - 88, s); })();
-        setPos(next);
-      }, [pos, p0, clampPos, aspect]);
+        setPos((p) => (p ? clampPos(p.x, p.y, sizeRef.current) : p));
+      }, [aspect, clampPos]);
 
       const loadStatus = useCallback(async () => {
         try {
@@ -259,11 +268,13 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
-      const savePrefs = async (patch) => {
+      // 注意：这里不能叫 savePrefs —— 那会遮蔽模块级的 localStorage 版本，
+      // 导致位置/大小/角色根本没存进浏览器，刷新就回到默认位。宿主偏好用这个名字。
+      const saveHostPrefs = async (patch) => {
         setPrefsBusy(true);
         try {
           const r = await postJson('/api/prefs', { ...(prefs || {}), ...patch });
-          if (r && r.ok) setPrefs({ defaultRoute: r.defaultRoute });
+          if (r && r.ok) setPrefs({ defaultRoute: r.defaultRoute, modelPreference: r.modelPreference });
           await loadStatus();
         } catch (err) {
           setNote({ kind: 'err', text: String(err && err.message || err) });
@@ -369,7 +380,7 @@ window.__ModuleLoader__.load({
       const resetLayout = () => {
         const s = DEFAULT_SIZE;
         const { w, h } = viewport();
-        const next = clampPos(w - Math.round(s * aspect) - 14, h - s - 88, s);
+        const next = clampPos(14, h - s - 88, s);   // 复位回默认的左侧
         setSize(s); sizeRef.current = s;
         setPos(next);
         savePrefs({ size: s, x: next.x, y: next.y });
@@ -507,6 +518,9 @@ window.__ModuleLoader__.load({
       const planMode = status && status.ark && status.ark.gateway && status.ark.gateway.mode === 'plan';
 
       const { w: vw, h: vh } = viewport();
+      // 方位判断：盒子中心在屏幕左半边 → 用默认形态（朝右歪头）；
+      // 到右半边就水平镜像，让脸朝着屏幕内侧，不会"背对"内容区。
+      const flipped = pos ? (pos.x + bw / 2) > vw / 2 : false;
       const panelUp = pos ? pos.y + size > vh * 0.55 : true;
       const panelRight = pos ? pos.x + bw / 2 > vw / 2 : true;
       const panelStyle = pos ? {
@@ -645,7 +659,7 @@ window.__ModuleLoader__.load({
               key: value,
               className: 'dbpet-btn' + ((prefs && prefs.defaultRoute === value) ? ' primary' : ''),
               disabled: prefsBusy,
-              onClick: () => savePrefs({ defaultRoute: value }),
+              onClick: () => saveHostPrefs({ defaultRoute: value }),
             }, label)))),
         h('div', { className: 'dbpet-note' },
           (prefs && prefs.defaultRoute === 'local')
@@ -658,7 +672,7 @@ window.__ModuleLoader__.load({
               key: value,
               className: 'dbpet-btn' + ((prefs && prefs.modelPreference === value) ? ' primary' : ''),
               disabled: prefsBusy,
-              onClick: () => savePrefs({ modelPreference: value }),
+              onClick: () => saveHostPrefs({ modelPreference: value }),
             }, label)))),
         h('div', { className: 'dbpet-note' },
           (prefs && prefs.modelPreference === 'quality')
@@ -750,7 +764,8 @@ window.__ModuleLoader__.load({
         onPointerUp: (e) => { e.stopPropagation(); },
         onClick: (e) => { e.stopPropagation(); setOpen(true); loadStatus(); },
       }, h(Icon, { kind: 'gear' })),
-      h('img', { src, alt: char ? char.name : '豆包', draggable: false }),
+      h('div', { className: 'dbpet-art' + (flipped ? ' is-flipped' : '') },
+        h('img', { src, alt: char ? char.name : '豆包', draggable: false })),
       h('div', {
         className: 'dbpet-resize' + (resizing ? ' is-active' : ''),
         role: 'separator', 'aria-label': '拖拽调整大小', title: '拖拽调整大小',
