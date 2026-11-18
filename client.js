@@ -13,6 +13,23 @@ window.__ModuleLoader__.load({
     const EDGE = 0;
     const ASSET_VER = 'v3';
 
+    // 路由调用令牌：由宿主通过 <meta> 注入到 DSH 已鉴权的 index.html，
+    // 跨站页面读不到它（跨域拿不到 HTML），本地其它程序也猜不出来。
+    function readRouteToken() {
+      try {
+        const el = typeof document !== 'undefined' && document.querySelector
+          ? document.querySelector('meta[name="dsh-doubao-pet-token"]')
+          : null;
+        return el ? (el.getAttribute('content') || '') : '';
+      } catch { return ''; }
+    }
+    const ROUTE_TOKEN = readRouteToken();
+    /** 给 <img src> 这类不能带请求头的 URL 追加 token */
+    function withToken(url) {
+      if (!ROUTE_TOKEN) return url;
+      return `${url}${url.includes('?') ? '&' : '?'}t=${encodeURIComponent(ROUTE_TOKEN)}`;
+    }
+
     function loadPrefs() { try { return JSON.parse(window.localStorage.getItem(PREFS_KEY) || '{}'); } catch { return {}; } }
     function savePrefs(patch) {
       try { window.localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch })); } catch { /* 忽略 */ }
@@ -21,11 +38,14 @@ window.__ModuleLoader__.load({
     function clamp(v, min, max) { return Math.min(Math.max(v, min), Math.max(min, max)); }
 
     async function api(pathname, init) {
-      const res = await fetch('/doubao-pet' + pathname, init);
+      const headers = { ...((init && init.headers) || {}) };
+      if (ROUTE_TOKEN) headers['x-doubao-pet-token'] = ROUTE_TOKEN;
+      const res = await fetch('/doubao-pet' + pathname, { ...(init || {}), headers });
       const text = await res.text();
       let json = null;
       try { json = JSON.parse(text); } catch { /* 非 JSON */ }
       if (!json) throw new Error(text.slice(0, 200) || `HTTP ${res.status}`);
+      if (json.error && res.status === 401) throw new Error('接口要求 DSH 界面令牌：请刷新页面');
       return json;
     }
     const postJson = (p, body) => api(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
@@ -510,7 +530,7 @@ window.__ModuleLoader__.load({
 
       // ---- 视图 ----
       const assets = char ? char.assets : { idle: '/doubao-pet/asset/doubao.png', hover: '/doubao-pet/asset/doubao-smile.png', click: '/doubao-pet/asset/doubao-squint.png' };
-      const src = `${(phase === 'click' ? assets.click : phase === 'hover' ? assets.hover : assets.idle)}?${ASSET_VER}`;
+      const src = withToken(`${(phase === 'click' ? assets.click : phase === 'hover' ? assets.hover : assets.idle)}?${ASSET_VER}`);
       const stats = status && status.stats ? status.stats : null;
       const today = stats && stats.today ? stats.today : { local: { count: 0, cash: 0, list: 0 }, ark: { count: 0, cash: 0, list: 0 } };
       const arkCash = Number(today.ark.cash || 0);
@@ -686,7 +706,7 @@ window.__ModuleLoader__.load({
                 key: c.id, type: 'button', className: 'dbpet-char' + (c.id === charId ? ' is-active' : ''),
                 onClick: () => pickCharacter(c.id),
               },
-              h('img', { src: `${c.assets.idle}?${ASSET_VER}`, alt: c.name }),
+              h('img', { src: withToken(`${c.assets.idle}?${ASSET_VER}`), alt: c.name }),
               h('span', null, c.name))))),
         h('div', { className: 'dbpet-row' },
           h('div', { className: 'dbpet-row-main' },

@@ -112,6 +112,27 @@ dsh plugin --profile web add link:D:\_\文档\三国弹射物语\plugins\dsh-dou
 
 API Key 只存在于 credentials（记录键 `DOUBAO_ARK_API_KEY`），不写配置文件、不进日志。
 
+## 安全 / 访问控制
+
+`/doubao-pet/*` 的所有路由（API、素材、出图结果）**只允许 DSH 界面自己调用**：
+
+- 宿主启动时生成一次性随机 token（24 字节），通过 `webServer.tapIndex` 注入到
+  **DSH 已完成鉴权的 `index.html`** 里的 `<meta name="dsh-doubao-pet-token">`。
+  根页面无凭据访问返回 401，所以这段 HTML 只有拿到 DSH 凭据的浏览器能读到
+- 客户端插件从 `<meta>` 取出 token，API 请求带 `x-doubao-pet-token` 头，
+  `<img src>` 这类不能带头的 URL 追加 `?t=<token>`
+- 校验失败一律 **401**，连素材图都不返回
+- 浏览器里的其它网页拿不到这个 token（跨域读不到 DSH 的 HTML），因此无法调用；
+  本地其它程序也猜不出来
+- POST 路由仍保留同源校验（`Origin`/`Host` 一致）作为第二道门
+- 老版本 DSH 不支持 `tapIndex` 时退化为同源校验，并在宿主日志里告警
+
+工具返回的 `/doubao-pet/out/<name>` 链接同样受保护：它在 DSH 页面内可直接打开，
+单独复制到别的浏览器窗口会 401；拿文件请用返回值里的 `path`。
+
+> 市场上架时维护者在描述里加了「HTTP 路由没有 DSH 访问检查」的提醒，0.2.0 起这条已不成立。
+
+
 ## 缓存与性能
 
 面板打开不再被额度查询拖慢：**状态与额度拆成两个接口**。

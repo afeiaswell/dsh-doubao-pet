@@ -11,6 +11,7 @@
 import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execFile } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,6 +67,47 @@ const localDay = (d) => new Date(d).toLocaleDateString('sv-SE'); // YYYY-MM-DD�
 export const inject = ['tools', 'webServer', 'credentials'];
 
 export function apply(ctx, config = {}) {
+  // ---- 调用方鉴权 ----
+  // 目标：只有 DSH 界面本身能调这些路由。
+  // 做法：启动时生成一次性随机 token，通过 webServer.tapIndex 注入到 **DSH 已完成鉴权的 index.html**
+  // （根页面无 token 访问返回 401，所以这段 HTML 只有拿到 DSH 凭据的浏览器能读到）；
+  // 客户端插件从 <meta> 里取出它，之后的请求带 X-Doubao-Pet-Token 头或 ?t= 参数。
+  // 跨站网页拿不到这个 token（跨域读不到 HTML），本地其它程序也猜不出来。
+  const ROUTE_TOKEN = randomBytes(24).toString('hex');
+  let tokenDelivered = false;
+
+  function tokenOf(req, url) {
+    const header = req.headers['x-doubao-pet-token'];
+    if (typeof header === 'string' && header === ROUTE_TOKEN) return true;
+    const q = url.searchParams.get('t');
+    return typeof q === 'string' && q === ROUTE_TOKEN;
+  }
+
+  /** 没带对 token 一律拒绝；token 未能下发时（老版本 DSH）退化为只做同源校验，并在日志里说明 */
+  function authorized(req, url) {
+    if (tokenOf(req, url)) return true;
+    if (!tokenDelivered) return sameOrigin(req);
+    return false;
+  }
+
+  ctx.effect(() => {
+    try {
+      if (typeof ctx.webServer.tapIndex !== 'function') {
+        ctx.logger?.warn?.('[doubao-pet] 当前 DSH 不支持 tapIndex，路由退回同源校验');
+        return undefined;
+      }
+      const dispose = ctx.webServer.tapIndex((html) => html.replace(
+        '</head>',
+        `<meta name="dsh-doubao-pet-token" content="${ROUTE_TOKEN}"></head>`,
+      ));
+      tokenDelivered = true;
+      return dispose;
+    } catch (err) {
+      ctx.logger?.warn?.(`[doubao-pet] 注入路由 token 失败，退回同源校验：${String(err && err.message || err)}`);
+      return undefined;
+    }
+  });
+
   // 宿主进程 cwd 是 DSH 安装目录、workingDirectory.defaultDirectory 也是安装目录，
   // 所以优先取「用户工作区登记表里最近更新的那个」，那才是用户真正在做的项目。
   const resolveOutDir = () => {
@@ -690,6 +732,10 @@ export function apply(ctx, config = {}) {
     handler: async (req, res) => {
       const url = new URL(req.url || '/', 'http://localhost');
       const sub = url.pathname.slice(PREFIX.length) || '/';
+      // 只允许带对 token 的调用方（DSH 界面自己）；否则连图片都不给
+      if (!authorized(req, url)) {
+        return sendJson(res, 401, { error: 'unauthorized：这些接口只允许 DSH 界面调用（缺少 x-doubao-pet-token）' });
+      }
       try {
         if (req.method === 'GET' && sub.startsWith('/asset/')) return await serveAsset(res, decodeURIComponent(sub.slice('/asset/'.length)));
         if (req.method === 'GET' && sub.startsWith('/out/')) return await serveOutput(res, decodeURIComponent(sub.slice('/out/'.length)));
